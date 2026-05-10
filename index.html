@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Force Graph — живая симуляция</title>
+    <meta
+      name="description"
+      content="Интерактивный force-directed граф: физика пружин, отталкивание, перетаскивание узлов."
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html,
+      body {
+        font-family: "Inter", system-ui, sans-serif;
+        background: #050816;
+      }
+      .mono {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+      }
+      #stage {
+        background:
+          radial-gradient(
+            ellipse at 20% 10%,
+            rgba(99, 102, 241, 0.18),
+            transparent 60%
+          ),
+          radial-gradient(
+            ellipse at 80% 90%,
+            rgba(236, 72, 153, 0.15),
+            transparent 60%
+          ),
+          radial-gradient(
+            ellipse at 50% 50%,
+            rgba(14, 165, 233, 0.08),
+            transparent 70%
+          ),
+          #050816;
+      }
+      .glass {
+        background: rgba(15, 23, 42, 0.55);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+      }
+      input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        height: 4px;
+        background: linear-gradient(
+          90deg,
+          #6366f1 var(--p, 50%),
+          rgba(148, 163, 184, 0.25) var(--p, 50%)
+        );
+        border-radius: 9999px;
+        outline: none;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 9999px;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.45);
+        cursor: grab;
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border-radius: 9999px;
+        background: #fff;
+        border: none;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.45);
+        cursor: grab;
+      }
+      .btn {
+        transition:
+          transform 0.15s ease,
+          background 0.2s ease,
+          border-color 0.2s ease;
+      }
+      .btn:hover {
+        transform: translateY(-1px);
+      }
+      .pulse-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 9999px;
+        background: #34d399;
+        box-shadow: 0 0 12px #34d399;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body class="text-slate-100 overflow-hidden">
+    <main id="stage" class="relative h-screen w-screen overflow-hidden">
+      <canvas id="graph" class="absolute inset-0"></canvas>
+
+      <header
+        class="absolute top-0 left-0 right-0 flex items-center justify-between gap-4 p-5 pointer-events-none"
+      >
+        <div class="pointer-events-auto flex items-center gap-3">
+          <div
+            class="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-rose-500 shadow-lg shadow-fuchsia-500/30 grid place-items-center"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              class="h-5 w-5 text-white"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="6" cy="6" r="2.2" />
+              <circle cx="18" cy="6" r="2.2" />
+              <circle cx="12" cy="18" r="2.2" />
+              <path d="M6 6 L18 6 M6 6 L12 18 M18 6 L12 18" />
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-lg font-semibold tracking-tight">Force Graph</h1>
+            <p class="text-xs text-slate-400 -mt-0.5">
+              живая симуляция · физика пружин и отталкивания
+            </p>
+          </div>
+        </div>
+
+        <div
+          class="pointer-events-auto glass rounded-xl px-3 py-2 flex items-center gap-2 text-xs text-slate-300"
+        >
+          <span class="pulse-dot"></span>
+          <span class="mono"
+            ><span id="nodeCount">0</span> nodes ·
+            <span id="edgeCount">0</span> edges ·
+            <span id="fpsCount">0</span> fps</span
+          >
+        </div>
+      </header>
+
+      <aside
+        class="absolute top-24 left-5 w-72 glass rounded-2xl p-5 shadow-2xl shadow-black/40 space-y-5"
+      >
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs uppercase tracking-wider text-slate-400"
+              >Отталкивание</label
+            >
+            <span id="repelVal" class="mono text-xs text-indigo-300">800</span>
+          </div>
+          <input
+            id="repel"
+            type="range"
+            min="100"
+            max="3000"
+            value="800"
+            class="w-full"
+          />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs uppercase tracking-wider text-slate-400"
+              >Жёсткость пружин</label
+            >
+            <span id="springVal" class="mono text-xs text-fuchsia-300"
+              >0.04</span
+            >
+          </div>
+          <input
+            id="spring"
+            type="range"
+            min="1"
+            max="20"
+            value="4"
+            class="w-full"
+          />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs uppercase tracking-wider text-slate-400"
+              >Длина связи</label
+            >
+            <span id="linkVal" class="mono text-xs text-cyan-300">110</span>
+          </div>
+          <input
+            id="link"
+            type="range"
+            min="40"
+            max="260"
+            value="110"
+            class="w-full"
+          />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs uppercase tracking-wider text-slate-400"
+              >Гравитация</label
+            >
+            <span id="gravVal" class="mono text-xs text-emerald-300">0.04</span>
+          </div>
+          <input
+            id="grav"
+            type="range"
+            min="0"
+            max="20"
+            value="4"
+            class="w-full"
+          />
+        </div>
+
+        <div class="pt-2 grid grid-cols-2 gap-2">
+          <button
+            id="addNode"
+            class="btn rounded-lg px-3 py-2 text-sm font-medium bg-indigo-500/90 hover:bg-indigo-400 shadow-lg shadow-indigo-500/30"
+          >
+            + Узел
+          </button>
+          <button
+            id="addCluster"
+            class="btn rounded-lg px-3 py-2 text-sm font-medium bg-fuchsia-500/90 hover:bg-fuchsia-400 shadow-lg shadow-fuchsia-500/30"
+          >
+            + Кластер
+          </button>
+          <button
+            id="reset"
+            class="btn col-span-2 rounded-lg px-3 py-2 text-sm font-medium bg-slate-700/70 hover:bg-slate-600 border border-slate-600/60"
+          >
+            Перегенерировать
+          </button>
+        </div>
+      </aside>
+
+      <footer
+        class="absolute bottom-5 left-1/2 -translate-x-1/2 glass rounded-full px-5 py-2 text-xs text-slate-400"
+      >
+        тяни узел мышкой ·
+        <span class="text-slate-200">двойной клик</span> добавляет узел ·
+        <span class="text-slate-200">правый клик</span> удаляет
+      </footer>
+    </main>
+
+    <script>
+      (() => {
+        const canvas = document.getElementById("graph");
+        const ctx = canvas.getContext("2d");
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        const palette = [
+          "#6366f1",
+          "#22d3ee",
+          "#ec4899",
+          "#f59e0b",
+          "#34d399",
+          "#a855f7",
+          "#f43f5e",
+        ];
+
+        const params = {
+          repel: 800,
+          spring: 0.04,
+          linkLen: 110,
+          gravity: 0.04,
+          damping: 0.86,
+        };
+
+        let nodes = [];
+        let edges = [];
+        let dragging = null;
+        let hovered = null;
+        let pointer = { x: 0, y: 0, down: false };
+
+        function resize() {
+          const w = window.innerWidth;
+          const h = window.innerHeight;
+          canvas.width = w * dpr;
+          canvas.height = h * dpr;
+          canvas.style.width = w + "px";
+          canvas.style.height = h + "px";
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        window.addEventListener("resize", resize);
+        resize();
+
+        function rand(a, b) {
+          return a + Math.random() * (b - a);
+        }
+
+        function makeNode(x, y, group = 0) {
+          return {
+            id: Math.random().toString(36).slice(2, 8),
+            x: x ?? window.innerWidth / 2 + rand(-40, 40),
+            y: y ?? window.innerHeight / 2 + rand(-40, 40),
+            vx: 0,
+            vy: 0,
+            r: rand(7, 14),
+            group,
+            color: palette[group % palette.length],
+          };
+        }
+
+        function connect(a, b) {
+          if (a === b) return;
+          if (
+            edges.some(
+              (e) => (e.a === a && e.b === b) || (e.a === b && e.b === a),
+            )
+          )
+            return;
+          edges.push({ a, b });
+        }
+
+        function seed() {
+          nodes = [];
+          edges = [];
+          const groups = 4;
+          for (let g = 0; g < groups; g++) {
+            const cx = window.innerWidth * (0.25 + 0.5 * Math.random());
+            const cy = window.innerHeight * (0.25 + 0.5 * Math.random());
+            const cluster = [];
+            const size = 5 + Math.floor(Math.random() * 5);
+            for (let i = 0; i < size; i++) {
+              const n = makeNode(cx + rand(-30, 30), cy + rand(-30, 30), g);
+              nodes.push(n);
+              cluster.push(n);
+            }
+            const hub = cluster[0];
+            for (let i = 1; i < cluster.length; i++) connect(hub, cluster[i]);
+            for (let i = 1; i < cluster.length; i++) {
+              if (Math.random() < 0.35)
+                connect(
+                  cluster[i],
+                  cluster[1 + Math.floor(Math.random() * (cluster.length - 1))],
+                );
+            }
+          }
+          for (let i = 0; i < 4; i++) {
+            const a = nodes[Math.floor(Math.random() * nodes.length)];
+            const b = nodes[Math.floor(Math.random() * nodes.length)];
+            connect(a, b);
+          }
+        }
+
+        function addCluster() {
+          const g = Math.floor(Math.random() * palette.length);
+          const cx = rand(150, window.innerWidth - 150);
+          const cy = rand(150, window.innerHeight - 150);
+          const size = 4 + Math.floor(Math.random() * 4);
+          const fresh = [];
+          for (let i = 0; i < size; i++) {
+            const n = makeNode(cx + rand(-30, 30), cy + rand(-30, 30), g);
+            nodes.push(n);
+            fresh.push(n);
+          }
+          for (let i = 1; i < fresh.length; i++) connect(fresh[0], fresh[i]);
+          if (nodes.length > size) {
+            const anchor = nodes[Math.floor(Math.random() * (nodes.length - size))];
+            connect(anchor, fresh[0]);
+          }
+        }
+
+        function addNodeAt(x, y) {
+          const n = makeNode(x, y, Math.floor(Math.random() * palette.length));
+          nodes.push(n);
+          if (nodes.length > 1) {
+            let nearest = null,
+              best = Infinity;
+            for (const o of nodes) {
+              if (o === n) continue;
+              const d = (o.x - n.x) ** 2 + (o.y - n.y) ** 2;
+              if (d < best) {
+                best = d;
+                nearest = o;
+              }
+            }
+            if (nearest) connect(n, nearest);
+          }
+        }
+
+        function removeNode(n) {
+          nodes = nodes.filter((m) => m !== n);
+          edges = edges.filter((e) => e.a !== n && e.b !== n);
+        }
+
+        function nodeAt(x, y) {
+          for (let i = nodes.length - 1; i >= 0; i--) {
+            const n = nodes[i];
+            const dx = n.x - x,
+              dy = n.y - y;
+            if (dx * dx + dy * dy < (n.r + 4) ** 2) return n;
+          }
+          return null;
+        }
+
+        function step() {
+          const cx = window.innerWidth / 2;
+          const cy = window.innerHeight / 2;
+
+          for (let i = 0; i < nodes.length; i++) {
+            const a = nodes[i];
+            for (let j = i + 1; j < nodes.length; j++) {
+              const b = nodes[j];
+              let dx = b.x - a.x;
+              let dy = b.y - a.y;
+              let d2 = dx * dx + dy * dy;
+              if (d2 < 0.01) {
+                dx = rand(-0.5, 0.5);
+                dy = rand(-0.5, 0.5);
+                d2 = dx * dx + dy * dy;
+              }
+              const d = Math.sqrt(d2);
+              const f = params.repel / d2;
+              const fx = (dx / d) * f;
+              const fy = (dy / d) * f;
+              a.vx -= fx;
+              a.vy -= fy;
+              b.vx += fx;
+              b.vy += fy;
+            }
+          }
+
+          for (const e of edges) {
+            const a = e.a,
+              b = e.b;
+            const dx = b.x - a.x,
+              dy = b.y - a.y;
+            const d = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+            const diff = d - params.linkLen;
+            const fx = (dx / d) * diff * params.spring;
+            const fy = (dy / d) * diff * params.spring;
+            a.vx += fx;
+            a.vy += fy;
+            b.vx -= fx;
+            b.vy -= fy;
+          }
+
+          for (const n of nodes) {
+            n.vx += (cx - n.x) * params.gravity * 0.01;
+            n.vy += (cy - n.y) * params.gravity * 0.01;
+          }
+
+          for (const n of nodes) {
+            if (n === dragging) {
+              n.x = pointer.x;
+              n.y = pointer.y;
+              n.vx = 0;
+              n.vy = 0;
+              continue;
+            }
+            n.vx *= params.damping;
+            n.vy *= params.damping;
+            n.x += n.vx;
+            n.y += n.vy;
+
+            const m = 20;
+            if (n.x < m) {
+              n.x = m;
+              n.vx *= -0.5;
+            }
+            if (n.y < m) {
+              n.y = m;
+              n.vy *= -0.5;
+            }
+            if (n.x > window.innerWidth - m) {
+              n.x = window.innerWidth - m;
+              n.vx *= -0.5;
+            }
+            if (n.y > window.innerHeight - m) {
+              n.y = window.innerHeight - m;
+              n.vy *= -0.5;
+            }
+          }
+        }
+
+        function draw() {
+          const w = window.innerWidth,
+            h = window.innerHeight;
+          ctx.clearRect(0, 0, w, h);
+
+          ctx.lineWidth = 1;
+          for (const e of edges) {
+            const grad = ctx.createLinearGradient(e.a.x, e.a.y, e.b.x, e.b.y);
+            grad.addColorStop(0, e.a.color + "aa");
+            grad.addColorStop(1, e.b.color + "aa");
+            ctx.strokeStyle = grad;
+            ctx.beginPath();
+            ctx.moveTo(e.a.x, e.a.y);
+            ctx.lineTo(e.b.x, e.b.y);
+            ctx.stroke();
+          }
+
+          for (const n of nodes) {
+            const isHover = n === hovered || n === dragging;
+            const r = n.r + (isHover ? 3 : 0);
+
+            const glow = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 4);
+            glow.addColorStop(0, n.color + "55");
+            glow.addColorStop(1, n.color + "00");
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, r * 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = n.color;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = "rgba(255,255,255,0.85)";
+            ctx.lineWidth = isHover ? 2 : 1;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+
+        let lastT = performance.now();
+        let frames = 0;
+        let fpsT = lastT;
+        function loop(t) {
+          step();
+          draw();
+          frames++;
+          if (t - fpsT > 500) {
+            const fps = Math.round((frames * 1000) / (t - fpsT));
+            document.getElementById("fpsCount").textContent = fps;
+            document.getElementById("nodeCount").textContent = nodes.length;
+            document.getElementById("edgeCount").textContent = edges.length;
+            frames = 0;
+            fpsT = t;
+          }
+          requestAnimationFrame(loop);
+        }
+
+        canvas.addEventListener("pointermove", (e) => {
+          const r = canvas.getBoundingClientRect();
+          pointer.x = e.clientX - r.left;
+          pointer.y = e.clientY - r.top;
+          hovered = nodeAt(pointer.x, pointer.y);
+          canvas.style.cursor = hovered || dragging ? "grab" : "default";
+        });
+        canvas.addEventListener("pointerdown", (e) => {
+          if (e.button !== 0) return;
+          pointer.down = true;
+          dragging = nodeAt(pointer.x, pointer.y);
+          if (dragging) canvas.style.cursor = "grabbing";
+        });
+        window.addEventListener("pointerup", () => {
+          dragging = null;
+          pointer.down = false;
+        });
+        canvas.addEventListener("dblclick", () => addNodeAt(pointer.x, pointer.y));
+        canvas.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          const n = nodeAt(pointer.x, pointer.y);
+          if (n) removeNode(n);
+        });
+
+        const bind = (id, key, scale, fmt, fillId) => {
+          const el = document.getElementById(id);
+          const out = document.getElementById(id + "Val");
+          const update = () => {
+            const v = +el.value * scale;
+            params[key] = v;
+            out.textContent = fmt(v);
+            const p =
+              ((+el.value - +el.min) / (+el.max - +el.min)) * 100;
+            el.style.setProperty("--p", p + "%");
+          };
+          el.addEventListener("input", update);
+          update();
+        };
+        bind("repel", "repel", 1, (v) => Math.round(v));
+        bind("spring", "spring", 0.01, (v) => v.toFixed(2));
+        bind("link", "linkLen", 1, (v) => Math.round(v));
+        bind("grav", "gravity", 0.01, (v) => v.toFixed(2));
+
+        document.getElementById("addNode").addEventListener("click", () =>
+          addNodeAt(
+            window.innerWidth / 2 + rand(-80, 80),
+            window.innerHeight / 2 + rand(-80, 80),
+          ),
+        );
+        document.getElementById("addCluster").addEventListener("click", addCluster);
+        document.getElementById("reset").addEventListener("click", seed);
+
+        seed();
+        requestAnimationFrame(loop);
+      })();
+    </script>
+  </body>
+</html>
