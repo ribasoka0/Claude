@@ -18,6 +18,6 @@
 
 1. Открой **Settings → Pages** в репозитории.
 2. В разделе **Build and deployment** выбери источник **Deploy from a branch**.
-3. Branch: `claude/initial-setup-LPeoi`, папка `/ (root)`.
+3. Branch: `main`, папка `/ (root)`.
 4. Сохрани — через минуту страница будет доступна по адресу
-   `https://<user>.github.io/<repo>/`.
+   `https://ribasoka0.github.io/Claude/`.
